@@ -526,9 +526,12 @@ static int ada_init(void)
   bus1 = i2c_get_adapter(1);
   printk(KERN_ALERT "***bus1 = %p\n", bus1);  
   cli32 = i2c_new_device(bus1, &mcp23017_info); 
-  printk(KERN_ALERT "***cli32 = %p\n", cli32);  
+  printk(KERN_ALERT "***cli32 = %p\n", cli32);
+  
+  if (cli32 == NULL)
+      return -1;
 
-  return -1;
+  return 0;
 }
 
 static void ada_exit(void)
@@ -572,6 +575,15 @@ static void write_command(int byte)
     write_byte(byte);
 }
 
+static const int row_start[] = {0, 64, 20, 84};
+
+static void write_line(int line)
+{
+    write_command(0x80 + row_start[line]); // Set DDRAM address
+    
+    //write_data
+
+}
 
 static void lcd_init(void)
 {
@@ -613,6 +625,8 @@ static void lcd_exit(void)
     FREE(BUF_E);
     FREE(BUF_RW);
     FREE(BUF_RS);
+    
+    FREE(LED_GREEN);
 }
 
 static int lcdsim_init(void)
@@ -649,22 +663,22 @@ static int lcdsim_init(void)
   
   lcd_init();
   
-  // All OK
-  return 0;
+    // All OK
+    return 0;
   
   ada_init_fail:
-  device_destroy(class, devnum);
-
- dev_create_fail:
-  cdev_del(&cdev);
+    device_destroy(class, devnum);
+  
+  dev_create_fail:
+    cdev_del(&cdev);
 
  dev_add_fail:
-  unregister_chrdev_region(devnum, 1);  
+    unregister_chrdev_region(devnum, 1);  
 
  devnum_fail:
-  class_destroy(class);
+    class_destroy(class);
 
-  return err;
+     return err;
 }
 
 static void lcdsim_exit(void)
