@@ -592,7 +592,7 @@ static void lcd_init(void)
     OUTL(BUF_DB5);
     OUTL(BUF_DB4);
 
-    OUTH(LED_GREEN);
+    OUTL(LED_GREEN);
     
     OUTL(BUF_E);
     OUTL(BUF_RW);
