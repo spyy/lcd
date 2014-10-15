@@ -4,7 +4,7 @@ if ((`lsmod | grep lcd | wc -l`))
   then 
     rmmod lcd
   fi
-insmod lcdsim.ko
+insmod lcd.ko
 if ((`ls /dev | grep lcd | wc -l`))
   then 
     chmod 666 /dev/lcd
