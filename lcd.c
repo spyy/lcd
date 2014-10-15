@@ -12,8 +12,9 @@
 #include <linux/cdev.h>
 #include <linux/fs.h>
 #include <linux/i2c.h>
-//#include <linux/gpio.h>
+#include <linux/gpio.h>
 #include <linux/spi/mcp23s08.h>
+#include <linux/delay.h>
 
 /************************************************************
  * Module config
@@ -21,6 +22,29 @@
 
 #define LCD_BUFFER_LENGTH 80
 #define MODULE_NAME "lcd"
+
+#define LED_RED      6
+#define LED_GREEN    7
+#define LED_BLUE     8
+
+#define BUF_DB7     9
+#define BUF_DB6     10
+#define BUF_DB5     11
+#define BUF_DB4     12
+#define BUF_E       13
+#define BUF_RW      14
+#define BUF_RS      15
+
+#define IN(pin) gpio_request_one(gpiobase+(pin), GPIOF_IN, #pin)
+#define DIN(pin) gpio_direction_input(gpiobase+(pin))
+#define OUTH(pin) gpio_request_one(gpiobase+(pin), GPIOF_OUT_INIT_HIGH, #pin)
+#define OUTL(pin) gpio_request_one(gpiobase+(pin), GPIOF_OUT_INIT_LOW, #pin)
+#define DOUT(pin) gpio_direction_output(gpiobase+(pin))
+#define FREE(pin) gpio_free(gpiobase+(pin))
+
+#define SET(pin, value) gpio_set_value_cansleep(gpiobase+(pin), (value))
+#define GET(pin) gpio_get_value_cansleep(gpiobase+(pin))
+
 
 /************************************************************
  * Module data
@@ -120,6 +144,7 @@ static struct kernel_param_ops display_ops = {
 
 module_param_cb(lcd_size, &size_ops, &lcd_size, 0644);
 module_param_cb(display, &display_ops, lcd_buffer, 0644);
+
 
 /************************************************************
  * Write stream parser
@@ -480,7 +505,7 @@ struct device *dev;
  * Init and exit
  */
 
-static void ada_init(void)
+static int ada_init(void)
 {
   struct mcp23s08_platform_data mcp23017_pfdata = {
     .chip = {
@@ -518,6 +543,78 @@ static void ada_exit(void)
   }
 }
 
+static void write_nybble(int n)
+{
+    SET(BUF_DB4, (n>>0) & 1);
+    SET(BUF_DB5, (n>>1) & 1);
+    SET(BUF_DB6, (n>>2) & 1);
+    SET(BUF_DB7, (n>>3) & 1);
+    
+    SET(BUF_E, 1);
+    SET(BUF_E, 0);
+}
+
+static void write_byte(int byte)
+{
+    write_nybble(byte>>4);
+    write_nybble(byte>>0);
+}
+
+static void write_data(int byte)
+{
+    SET(BUF_RS, 1);
+    write_byte(byte);
+}
+
+static void write_command(int byte)
+{
+    SET(BUF_RS, 0);
+    write_byte(byte);
+}
+
+
+static void lcd_init(void)
+{
+    OUTL(BUF_DB7);
+    OUTL(BUF_DB6);
+    OUTL(BUF_DB5);
+    OUTL(BUF_DB4);
+
+    OUTH(LED_GREEN);
+    
+    OUTL(BUF_E);
+    OUTL(BUF_RW);
+    OUTL(BUF_RS);
+    
+    // "Dot Matrix Liquid Crystal Display Controller/Driver"
+    
+    // 8 bittinen 4:ksi, page 45
+    write_nybble(3);
+    mdelay(4);
+    write_nybble(3);
+    write_nybble(3);
+    write_nybble(2);
+    
+    // Näytön säätö,page 24
+    
+    write_command(0x28); // 2 lines 5x8 font
+    write_command(0x0C); // display on
+    write_command(0x06); // left to right
+    
+}
+
+static void lcd_exit(void)
+{
+    FREE(BUF_DB7);
+    FREE(BUF_DB6);
+    FREE(BUF_DB5);
+    FREE(BUF_DB4);
+
+    FREE(BUF_E);
+    FREE(BUF_RW);
+    FREE(BUF_RS);
+}
+
 static int lcdsim_init(void)
 {
   int err = 0;
@@ -545,8 +642,18 @@ static int lcdsim_init(void)
     goto dev_create_fail;
   }
 
+  err = ada_init();
+  if(err) {
+      goto ada_init_fail;
+  }
+  
+  lcd_init();
+  
   // All OK
   return 0;
+  
+  ada_init_fail:
+  device_destroy(class, devnum);
 
  dev_create_fail:
   cdev_del(&cdev);
@@ -562,6 +669,8 @@ static int lcdsim_init(void)
 
 static void lcdsim_exit(void)
 {
+    lcd_exit();
+    ada_exit();
   device_destroy(class, devnum);
   cdev_del(&cdev);
   unregister_chrdev_region(devnum, 1);  
